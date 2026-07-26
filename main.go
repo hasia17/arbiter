@@ -23,8 +23,39 @@ func fetchURL(url string) {
 		fmt.Println("Error fetching url:", err)
 		os.Exit(1)
 	}
+	defer resp.Body.Close()
 
 	fmt.Println("Status:", resp.Status)
+
+	securityHeaders := []string{
+		"Strict-Transport-Security",
+		"X-Content-Type-Options",
+		"Content-Security-Policy",
+		"X-Frame-Options",
+	}
+	for _, name := range securityHeaders {
+		checkHeader(resp.Header, name)
+	}
+
+	checkServerDisclosure(resp.Header)
+}
+
+func checkHeader(headers http.Header, name string) {
+	value := headers.Get(name)
+	if value == "" {
+		fmt.Println(name, ": MISSING")
+	} else {
+		fmt.Println(name, ":", value)
+	}
+}
+
+func checkServerDisclosure(headers http.Header) {
+	value := headers.Get("Server")
+	if value == "" {
+		fmt.Println("Server disclosure: none")
+	} else {
+		fmt.Println("Server disclosure:", value)
+	}
 }
 
 func validateURL(url string) {
