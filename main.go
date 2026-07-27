@@ -1,20 +1,31 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run main.go <url>")
+	url := flag.String("url", "", "URL to scan (required)")
+	flag.Parse()
+
+	if *url == "" {
+		fmt.Println("Usage: go run main.go -url <url>")
 		os.Exit(1)
 	}
 
-	validateURL(os.Args[1])
-	fetchURL(os.Args[1])
+	validateURL(*url)
+	fetchURL(*url)
+}
+
+type CheckResult struct {
+	Name  string
+	Value string
+	Pass  bool
 }
 
 func fetchURL(url string) {
@@ -32,30 +43,58 @@ func fetchURL(url string) {
 		"X-Content-Type-Options",
 		"Content-Security-Policy",
 		"X-Frame-Options",
+		"Referrer-Policy",
+		"Permissions-Policy",
 	}
+	var results []CheckResult
 	for _, name := range securityHeaders {
-		checkHeader(resp.Header, name)
+		results = append(results, checkHeader(resp.Header, name))
 	}
+	results = append(results, checkServerDisclosure(resp.Header))
+	results = append(results, checkRedirectToHTTPS(url, resp))
+	results = append(results, checkCertExpiry(resp))
 
-	checkServerDisclosure(resp.Header)
+	for _, r := range results {
+		fmt.Println(r.Name, ":", r.Value)
+	}
 }
 
-func checkHeader(headers http.Header, name string) {
+func checkRedirectToHTTPS(originalURL string, resp *http.Response) CheckResult {
+	finalURL := resp.Request.URL.String()
+	if strings.HasPrefix(originalURL, "https://") {
+		return CheckResult{Name: "Redirect to HTTPS", Value: "n/a, already https", Pass: true}
+	}
+	if strings.HasPrefix(finalURL, "https://") {
+		return CheckResult{Name: "Redirect to HTTPS", Value: "yes", Pass: true}
+	}
+	return CheckResult{Name: "Redirect to HTTPS", Value: "no", Pass: false}
+}
+
+func checkHeader(headers http.Header, name string) CheckResult {
 	value := headers.Get(name)
 	if value == "" {
-		fmt.Println(name, ": MISSING")
-	} else {
-		fmt.Println(name, ":", value)
+		return CheckResult{Name: name, Value: "MISSING", Pass: false}
 	}
+	return CheckResult{Name: name, Value: value, Pass: true}
 }
 
-func checkServerDisclosure(headers http.Header) {
+func checkCertExpiry(resp *http.Response) CheckResult {
+	if resp.TLS == nil {
+		return CheckResult{Name: "Certificate expiry", Value: "n/a, not https", Pass: true}
+	}
+
+	cert := resp.TLS.PeerCertificates[0]
+	daysLeft := int(time.Until(cert.NotAfter).Hours() / 24)
+	value := fmt.Sprintf("%d days left", daysLeft)
+	return CheckResult{Name: "Certificate expiry", Value: value, Pass: daysLeft > 0}
+}
+
+func checkServerDisclosure(headers http.Header) CheckResult {
 	value := headers.Get("Server")
 	if value == "" {
-		fmt.Println("Server disclosure: none")
-	} else {
-		fmt.Println("Server disclosure:", value)
+		return CheckResult{Name: "Server disclosure", Value: "none", Pass: true}
 	}
+	return CheckResult{Name: "Server disclosure", Value: value, Pass: false}
 }
 
 func validateURL(url string) {
