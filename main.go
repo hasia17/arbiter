@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"net/http"
@@ -53,6 +54,7 @@ func fetchURL(url string) {
 	results = append(results, checkServerDisclosure(resp.Header))
 	results = append(results, checkRedirectToHTTPS(url, resp))
 	results = append(results, checkCertExpiry(resp))
+	results = append(results, checkTLSVersion(resp))
 
 	for _, r := range results {
 		fmt.Println(r.Name, ":", r.Value)
@@ -87,6 +89,16 @@ func checkCertExpiry(resp *http.Response) CheckResult {
 	daysLeft := int(time.Until(cert.NotAfter).Hours() / 24)
 	value := fmt.Sprintf("%d days left", daysLeft)
 	return CheckResult{Name: "Certificate expiry", Value: value, Pass: daysLeft > 0}
+}
+
+func checkTLSVersion(resp *http.Response) CheckResult {
+	if resp.TLS == nil {
+		return CheckResult{Name: "TLS version", Value: "n/a, not https", Pass: true}
+	}
+
+	version := resp.TLS.Version
+	name := tls.VersionName(version)
+	return CheckResult{Name: "TLS version", Value: name, Pass: version >= tls.VersionTLS12}
 }
 
 func checkServerDisclosure(headers http.Header) CheckResult {
