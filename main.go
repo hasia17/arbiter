@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -55,6 +56,9 @@ func fetchURL(url string) {
 	results = append(results, checkRedirectToHTTPS(url, resp))
 	results = append(results, checkCertExpiry(resp))
 	results = append(results, checkTLSVersion(resp))
+	results = append(results, checkCookies(resp)...)
+	results = append(results, checkSecurityTxt(resp))
+	results = append(results, checkDNS(resp.Request.URL.Hostname()))
 
 	for _, r := range results {
 		fmt.Println(r.Name, ":", r.Value)
@@ -99,6 +103,58 @@ func checkTLSVersion(resp *http.Response) CheckResult {
 	version := resp.TLS.Version
 	name := tls.VersionName(version)
 	return CheckResult{Name: "TLS version", Value: name, Pass: version >= tls.VersionTLS12}
+}
+
+func checkCookies(resp *http.Response) []CheckResult {
+	cookies := resp.Cookies()
+	if len(cookies) == 0 {
+		return []CheckResult{{Name: "Cookies", Value: "none set", Pass: true}}
+	}
+
+	var results []CheckResult
+	for _, c := range cookies {
+		value := fmt.Sprintf("Secure=%t HttpOnly=%t SameSite=%s", c.Secure, c.HttpOnly, sameSiteName(c.SameSite))
+		pass := c.Secure && c.HttpOnly
+		results = append(results, CheckResult{Name: "Cookie: " + c.Name, Value: value, Pass: pass})
+	}
+	return results
+}
+
+func sameSiteName(s http.SameSite) string {
+	switch s {
+	case http.SameSiteStrictMode:
+		return "Strict"
+	case http.SameSiteLaxMode:
+		return "Lax"
+	case http.SameSiteNoneMode:
+		return "None"
+	default:
+		return "unset"
+	}
+}
+
+func checkSecurityTxt(resp *http.Response) CheckResult {
+	base := resp.Request.URL
+	securityTxtURL := base.Scheme + "://" + base.Host + "/.well-known/security.txt"
+
+	txtResp, err := http.Get(securityTxtURL)
+	if err != nil {
+		return CheckResult{Name: "security.txt", Value: "error checking: " + err.Error(), Pass: false}
+	}
+	defer txtResp.Body.Close()
+
+	if txtResp.StatusCode == http.StatusOK {
+		return CheckResult{Name: "security.txt", Value: "present", Pass: true}
+	}
+	return CheckResult{Name: "security.txt", Value: "missing", Pass: false}
+}
+
+func checkDNS(hostname string) CheckResult {
+	ips, err := net.LookupHost(hostname)
+	if err != nil {
+		return CheckResult{Name: "DNS records", Value: "lookup failed: " + err.Error(), Pass: false}
+	}
+	return CheckResult{Name: "DNS records", Value: strings.Join(ips, ", "), Pass: true}
 }
 
 func checkServerDisclosure(headers http.Header) CheckResult {
