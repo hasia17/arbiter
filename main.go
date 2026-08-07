@@ -59,6 +59,7 @@ func fetchURL(url string) {
 	results = append(results, checkCookies(resp)...)
 	results = append(results, checkSecurityTxt(resp))
 	results = append(results, checkDNS(resp.Request.URL.Hostname()))
+	results = append(results, checkSPF(resp.Request.URL.Hostname()))
 
 	for _, r := range results {
 		fmt.Println(r.Name, ":", r.Value)
@@ -155,6 +156,20 @@ func checkDNS(hostname string) CheckResult {
 		return CheckResult{Name: "DNS records", Value: "lookup failed: " + err.Error(), Pass: false}
 	}
 	return CheckResult{Name: "DNS records", Value: strings.Join(ips, ", "), Pass: true}
+}
+
+func checkSPF(hostname string) CheckResult {
+	records, err := net.LookupTXT(hostname)
+	if err != nil {
+		return CheckResult{Name: "SPF record", Value: "lookup failed: " + err.Error(), Pass: false}
+	}
+
+	for _, r := range records {
+		if strings.HasPrefix(r, "v=spf1") {
+			return CheckResult{Name: "SPF record", Value: r, Pass: true}
+		}
+	}
+	return CheckResult{Name: "SPF record", Value: "missing", Pass: false}
 }
 
 func checkServerDisclosure(headers http.Header) CheckResult {
