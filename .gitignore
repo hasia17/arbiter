@@ -12,6 +12,9 @@
 # Output of the go coverage tool
 *.out
 
+# Generated reports
+/reports/
+
 # Go workspace file
 go.work
 go.work.sum

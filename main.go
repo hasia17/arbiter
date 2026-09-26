@@ -2,15 +2,19 @@ package main
 
 import (
 	"flag"
+
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/hasia17/arbiter/internal/checks"
+	"github.com/hasia17/arbiter/internal/report"
 )
 
 func main() {
 	url := flag.String("url", "", "URL to scan (required)")
+	out := flag.String("out", "", "path to write PDF report (optional)")
 	flag.Parse()
 
 	if *url == "" {
@@ -28,6 +32,20 @@ func main() {
 
 	for _, r := range results {
 		fmt.Println(r.Name, ":", r.Value)
+	}
+
+	if *out != "" {
+		if err := os.MkdirAll("reports", 0755); err != nil {
+			fmt.Println("Error creating reports directory:", err)
+			os.Exit(1)
+		}
+		path := filepath.Join("reports", *out)
+
+		if err := report.WritePDF(*url, results, path); err != nil {
+			fmt.Println("Error writing PDF:", err)
+			os.Exit(1)
+		}
+		fmt.Println("PDF report written to", path)
 	}
 }
 
