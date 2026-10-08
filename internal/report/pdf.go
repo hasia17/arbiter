@@ -7,6 +7,18 @@ import (
 	"github.com/hasia17/arbiter/internal/checks"
 )
 
+var checkDescriptions = map[string]string{
+	"Strict-Transport-Security": "Forces browsers to always use HTTPS for this site, preventing downgrade attacks.",
+}
+
+func checkDescription(name string) string {
+	desc, ok := checkDescriptions[name]
+	if !ok {
+		return ""
+	}
+	return desc
+}
+
 func WritePDF(url string, results []checks.CheckResult, path string) error {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
@@ -43,7 +55,13 @@ func WritePDF(url string, results []checks.CheckResult, path string) error {
 	red := [3]int{209, 50, 47}
 
 	for _, r := range results {
-		if pdf.GetY()+cardHeight > pageBottom {
+		desc := checkDescription(r.Name)
+		cardH := cardHeight
+		if desc != "" {
+			cardH += 5
+		}
+
+		if pdf.GetY()+cardH > pageBottom {
 			pdf.AddPage()
 		}
 
@@ -57,7 +75,7 @@ func WritePDF(url string, results []checks.CheckResult, path string) error {
 		}
 
 		pdf.SetFillColor(color[0], color[1], color[2])
-		pdf.Rect(x, y, barWidth, cardHeight-4, "F")
+		pdf.Rect(x, y, barWidth, cardH-4, "F")
 
 		pdf.SetXY(x+4, y)
 		pdf.SetFont("Arial", "B", 11)
@@ -72,7 +90,14 @@ func WritePDF(url string, results []checks.CheckResult, path string) error {
 		pdf.SetTextColor(110, 110, 110)
 		pdf.CellFormat(180, 5, r.Value, "", 1, "L", false, 0, "")
 
-		pdf.SetY(y + cardHeight)
+		if desc != "" {
+			pdf.SetXY(x+4, y+11)
+			pdf.SetFont("Arial", "I", 8)
+			pdf.SetTextColor(140, 140, 140)
+			pdf.CellFormat(180, 5, desc, "", 1, "L", false, 0, "")
+		}
+
+		pdf.SetY(y + cardH)
 	}
 
 	return pdf.OutputFileAndClose(path)
