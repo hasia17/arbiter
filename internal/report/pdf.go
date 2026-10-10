@@ -9,6 +9,7 @@ import (
 
 var checkDescriptions = map[string]string{
 	"Strict-Transport-Security": "Forces browsers to always use HTTPS for this site, preventing downgrade attacks.",
+	"X-Content-Type-Options":    "Stops browsers from guessing file types, which can prevent some attacks.",
 }
 
 func checkDescription(name string) string {
