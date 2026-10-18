@@ -11,6 +11,8 @@ var checkDescriptions = map[string]string{
 	"Strict-Transport-Security": "Forces browsers to always use HTTPS for this site, preventing downgrade attacks.",
 	"X-Content-Type-Options":    "Stops browsers from guessing file types, which can prevent some attacks.",
 	"Content-Security-Policy":   "Restricts which sources of scripts, styles and other content the page may load, reducing the impact of injection attacks.",
+	"X-Frame-Options":           "Controls whether the page can be embedded in a frame on another site, helping prevent clickjacking.",
+	"Referrer-Policy":           "Controls how much of the page's URL is shared with other sites when a user navigates away or loads a resource.",
 }
 
 func checkDescription(name string) string {
