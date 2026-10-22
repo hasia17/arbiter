@@ -13,6 +13,7 @@ var checkDescriptions = map[string]string{
 	"Content-Security-Policy":   "Restricts which sources of scripts, styles and other content the page may load, reducing the impact of injection attacks.",
 	"X-Frame-Options":           "Controls whether the page can be embedded in a frame on another site, helping prevent clickjacking.",
 	"Referrer-Policy":           "Controls how much of the page's URL is shared with other sites when a user navigates away or loads a resource.",
+	"Permissions-Policy":       "Restricts which browser features (camera, microphone, geolocation, etc.) the page is allowed to use.",
 }
 
 func checkDescription(name string) string {
