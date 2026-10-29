@@ -15,8 +15,10 @@ type CheckResult struct {
 	Pass  bool
 }
 
+var client = &http.Client{Timeout: 10 * time.Second}
+
 func Run(url string) ([]CheckResult, error) {
-	resp, err := http.Get(url)
+	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +123,7 @@ func checkSecurityTxt(resp *http.Response) CheckResult {
 	base := resp.Request.URL
 	securityTxtURL := base.Scheme + "://" + base.Host + "/.well-known/security.txt"
 
-	txtResp, err := http.Get(securityTxtURL)
+	txtResp, err := client.Get(securityTxtURL)
 	if err != nil {
 		return CheckResult{Name: "security.txt", Value: "error checking: " + err.Error(), Pass: false}
 	}
