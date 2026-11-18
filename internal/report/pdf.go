@@ -8,38 +8,96 @@ import (
 	"github.com/hasia17/arbiter/internal/checks"
 )
 
-var checkDescriptions = map[string]string{
-	"Strict-Transport-Security": "Forces browsers to always use HTTPS for this site, preventing downgrade attacks.",
-	"X-Content-Type-Options":    "Stops browsers from guessing file types, which can prevent some attacks.",
-	"Content-Security-Policy":   "Restricts which sources of scripts, styles and other content the page may load, reducing the impact of injection attacks.",
-	"X-Frame-Options":           "Controls whether the page can be embedded in a frame on another site, helping prevent clickjacking.",
-	"Referrer-Policy":           "Controls how much of the page's URL is shared with other sites when a user navigates away or loads a resource.",
-	"Permissions-Policy":        "Restricts which browser features (camera, microphone, geolocation, etc.) the page is allowed to use.",
-	"HTTP status":               "The response code returned by the server for the requested URL.",
-	"Server disclosure":         "Whether the Server header reveals software details that could help an attacker find known vulnerabilities.",
-	"Redirect to HTTPS":         "Checks that plain HTTP requests are redirected to the encrypted HTTPS version of the site.",
-	"Certificate expiry":        "How many days remain before the site's TLS certificate expires and browsers start showing warnings.",
-	"TLS version":               "The encryption protocol version used; TLS 1.2 or newer is considered secure.",
-	"security.txt":              "A standard file that tells security researchers how to report vulnerabilities to the site owner.",
-	"DNS records":               "The IP addresses the domain name resolves to.",
-	"SPF record":                "A DNS record listing which servers may send email for this domain, helping prevent email spoofing.",
-	"Cookies":                   "Cookies should be marked Secure (sent only over HTTPS) and HttpOnly (hidden from JavaScript) to protect them from theft.",
+// truncateLines wraps text to fit a cell of the given width and keeps at most
+// maxLines lines, ending the last one with "..." if anything was cut off.
+//
+// text must already be converted to cp1252 (see tr in WritePDF). We don't use
+// fpdf's SplitText: it expects UTF-8 and panics on characters above U+00FF.
+func truncateLines(pdf *fpdf.Fpdf, text string, width float64, maxLines int) []string {
+	if maxLines < 1 {
+		return nil
+	}
+	// CellFormat pads text with the cell margin on both sides.
+	avail := width - 2*pdf.GetCellMargin()
+
+	lines := wrapText(pdf, text, avail)
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	if len(lines) <= maxLines {
+		return lines
+	}
+
+	lines = lines[:maxLines]
+	last := lines[maxLines-1]
+	for len(last) > 0 && pdf.GetStringWidth(last+"...") > avail {
+		last = last[:len(last)-1]
+	}
+	lines[maxLines-1] = last + "..."
+	return lines
 }
 
-func checkDescription(name string) string {
-	if strings.HasPrefix(name, "Cookie: ") {
-		name = "Cookies"
+// wrapText splits text into lines no wider than width, breaking at spaces.
+// A single word wider than a whole line is broken wherever it overflows.
+// It slices by bytes, which is safe because cp1252 uses one byte per character.
+func wrapText(pdf *fpdf.Fpdf, text string, width float64) []string {
+	var lines []string
+	line := ""
+	for _, word := range strings.Fields(text) {
+		candidate := word
+		if line != "" {
+			candidate = line + " " + word
+		}
+		if pdf.GetStringWidth(candidate) <= width {
+			line = candidate
+			continue
+		}
+
+		if line != "" {
+			lines = append(lines, line)
+		}
+		for len(word) > 1 && pdf.GetStringWidth(word) > width {
+			n := 1
+			for n < len(word) && pdf.GetStringWidth(word[:n+1]) <= width {
+				n++
+			}
+			lines = append(lines, word[:n])
+			word = word[n:]
+		}
+		line = word
 	}
-	desc, ok := checkDescriptions[name]
-	if !ok {
-		return ""
+	if line != "" {
+		lines = append(lines, line)
 	}
-	return desc
+	return lines
 }
 
 func WritePDF(url string, results []checks.CheckResult, path string) error {
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
+
+	// The built-in fonts only support the cp1252 encoding, while Go strings are
+	// UTF-8. tr converts text so that non-ASCII characters don't come out garbled.
+	// Characters outside cp1252 (e.g. Polish ś, ż, ł) become ".".
+	tr := pdf.UnicodeTranslatorFromDescriptor("")
+
+	const (
+		pageWidth     = 210.0
+		headerWidth   = pageWidth - 2*10 // fpdf's default 10mm margins
+		marginX       = 15.0
+		barWidth      = 1.5
+		textIndent    = 4.0
+		textWidth     = pageWidth - 2*marginX - textIndent
+		statusWidth   = 20.0
+		nameWidth     = textWidth - statusWidth
+		nameHeight    = 6.0
+		valueLineH    = 5.0
+		descLineH     = 4.0
+		cardPadding   = 4.0
+		maxValueLines = 3
+		maxDescLines  = 2
+		pageBottom    = 282.0
+	)
 
 	pdf.SetFont("Arial", "B", 20)
 	pdf.SetTextColor(20, 20, 20)
@@ -48,7 +106,7 @@ func WritePDF(url string, results []checks.CheckResult, path string) error {
 	pdf.Ln(9)
 	pdf.SetFont("Arial", "", 11)
 	pdf.SetTextColor(90, 90, 90)
-	pdf.Cell(0, 6, "Target: "+url)
+	pdf.Cell(0, 6, truncateLines(pdf, tr("Target: "+url), headerWidth, 1)[0])
 
 	pdf.Ln(6)
 	pdf.Cell(0, 6, "Generated: "+time.Now().Format("2006-01-02 15:04"))
@@ -57,27 +115,32 @@ func WritePDF(url string, results []checks.CheckResult, path string) error {
 	pdf.SetDrawColor(200, 200, 200)
 	pdf.SetLineWidth(0.3)
 	x, y := pdf.GetX(), pdf.GetY()
-	pdf.Line(x, y, 210-x, y)
+	pdf.Line(x, y, pageWidth-x, y)
 
 	pdf.Ln(8)
 	pdf.SetAutoPageBreak(false, 0)
-
-	const (
-		marginX    = 15.0
-		barWidth   = 1.5
-		cardHeight = 15.0
-		pageBottom = 282.0
-	)
 
 	green := [3]int{46, 160, 67}
 	red := [3]int{209, 50, 47}
 
 	for _, r := range results {
-		desc := checkDescription(r.Name)
-		cardH := cardHeight
-		if desc != "" {
-			cardH += 5
+		// SplitText measures with the current font, so set it before splitting.
+		pdf.SetFont("Arial", "B", 11)
+		name := truncateLines(pdf, tr(r.Name), nameWidth, 1)[0]
+
+		pdf.SetFont("Arial", "", 9)
+		valueLines := truncateLines(pdf, tr(r.Value), textWidth, maxValueLines)
+
+		var descLines []string
+		if r.Description != "" {
+			pdf.SetFont("Arial", "I", 8)
+			descLines = truncateLines(pdf, tr(r.Description), textWidth, maxDescLines)
 		}
+
+		cardH := nameHeight +
+			float64(len(valueLines))*valueLineH +
+			float64(len(descLines))*descLineH +
+			cardPadding
 
 		if pdf.GetY()+cardH > pageBottom {
 			pdf.AddPage()
@@ -93,26 +156,31 @@ func WritePDF(url string, results []checks.CheckResult, path string) error {
 		}
 
 		pdf.SetFillColor(color[0], color[1], color[2])
-		pdf.Rect(x, y, barWidth, cardH-4, "F")
+		pdf.Rect(x, y, barWidth, cardH-cardPadding, "F")
 
-		pdf.SetXY(x+4, y)
+		pdf.SetXY(x+textIndent, y)
 		pdf.SetFont("Arial", "B", 11)
 		pdf.SetTextColor(20, 20, 20)
-		pdf.CellFormat(140, 6, r.Name, "", 0, "L", false, 0, "")
+		pdf.CellFormat(nameWidth, nameHeight, name, "", 0, "L", false, 0, "")
 
 		pdf.SetTextColor(color[0], color[1], color[2])
-		pdf.CellFormat(0, 6, status, "", 1, "R", false, 0, "")
+		pdf.CellFormat(statusWidth, nameHeight, status, "", 1, "R", false, 0, "")
 
-		pdf.SetXY(x+4, y+6)
+		lineY := y + nameHeight
 		pdf.SetFont("Arial", "", 9)
 		pdf.SetTextColor(110, 110, 110)
-		pdf.CellFormat(180, 5, r.Value, "", 1, "L", false, 0, "")
+		for _, line := range valueLines {
+			pdf.SetXY(x+textIndent, lineY)
+			pdf.CellFormat(textWidth, valueLineH, line, "", 0, "L", false, 0, "")
+			lineY += valueLineH
+		}
 
-		if desc != "" {
-			pdf.SetXY(x+4, y+11)
-			pdf.SetFont("Arial", "I", 8)
-			pdf.SetTextColor(140, 140, 140)
-			pdf.CellFormat(180, 5, desc, "", 1, "L", false, 0, "")
+		pdf.SetFont("Arial", "I", 8)
+		pdf.SetTextColor(140, 140, 140)
+		for _, line := range descLines {
+			pdf.SetXY(x+textIndent, lineY)
+			pdf.CellFormat(textWidth, descLineH, line, "", 0, "L", false, 0, "")
+			lineY += descLineH
 		}
 
 		pdf.SetY(y + cardH)
