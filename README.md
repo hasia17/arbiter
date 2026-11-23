@@ -1,5 +1,7 @@
 # Arbiter
 
+[![Tests](https://github.com/hasia17/arbiter/actions/workflows/test.yml/badge.svg)](https://github.com/hasia17/arbiter/actions/workflows/test.yml)
+
 A command-line tool written in Go that scans a website and reports on its basic
 security hygiene: HTTP security headers, TLS, cookies, DNS and more. Results are
 printed to the terminal and can optionally be exported as a PDF report.
@@ -88,6 +90,10 @@ stdout and errors to stderr.
 
 13 of 16 checks passed
 ```
+
+And the first page of the PDF report for `https://github.com`:
+
+<img src="docs/report.png" alt="First page of an Arbiter PDF report" width="600">
 
 > **Note:** the PDF uses the built-in Arial font, which only covers the
 > Western European (cp1252) character set. Other characters, such as Polish
